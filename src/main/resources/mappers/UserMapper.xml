@@ -1,0 +1,275 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.buddy.user.mapper.UserMapper">
+
+    <insert id="createUser" parameterType="com.buddy.user.model.User">
+        INSERT INTO USERS (
+        EMAIL,
+        PASSWORD_HASH,
+        NAME,
+        GENDER,
+        ROLE,
+        LEVEL,
+        MONTHLY_GOAL,
+        STATUS,
+        CREATED_AT,
+        UPDATED_AT,
+        JOBS,
+        MBTI,
+        NICKNAME
+        )
+        VALUES (
+        #{email},
+        #{passwordHash},
+        #{name},
+        #{gender},
+        #{role},
+        #{level},
+        #{monthlyGoal},
+        #{status},
+        #{createdAt},
+        #{updatedAt},
+        #{jobs},
+        #{mbti},
+        #{nickname}
+        )
+    </insert>
+
+    <update id="updateUserRole">
+        UPDATE users
+        SET
+            role = #{role},
+            updated_at = #{updatedAt}
+        WHERE id = #{userId}
+    </update>
+
+    <update id="updateUserStatus">
+        UPDATE users
+        SET
+            status = #{status},
+            updated_at = #{updatedAt}
+        WHERE id = #{userId}
+    </update>
+
+    <select id="findById" parameterType="long" resultType="com.buddy.user.model.User">
+        SELECT
+        id,
+        email,
+        password_hash AS passwordHash,
+        name,
+        gender,
+        role,
+        level,
+        monthly_goal AS monthlyGoal,
+        status,
+        created_at AS createdAt,
+        updated_at AS updatedAt
+        FROM users
+        WHERE id = #{id}
+    </select>
+
+    <select id="getAdminUserList" resultType="com.buddy.user.dto.userList.AdminUserListRow">
+        SELECT
+        U.ID AS userId,
+        U.NAME AS name,
+        U.NICKNAME AS nickname,
+        U.LEVEL AS level,
+        T.starts_at AS recentSession,
+        T.title AS recentSessionTitle,
+        U.STATUS AS status,
+        U.ROLE AS role
+        FROM USERS U
+        LEFT JOIN (
+        -- 유저별로(DISTINCT ON) 시작시간 내림차순(DESC) 정렬하여 최신 1건만 추출
+        SELECT DISTINCT ON (user_id)
+        a.user_id,
+        s.starts_at,
+        s.title
+        FROM SESSION_APPLICATIONS a
+        INNER JOIN SESSIONS s ON a.session_id = s.id
+        WHERE a.status = 'CONFIRMED'
+        AND s.status = 'CLOSED'
+        ORDER BY a.user_id, s.starts_at DESC
+        ) AS T ON U.ID = T.user_id
+        <where>
+            <if test="query != null and query != ''">
+                and (
+                U.NAME LIKE '%' || #{query} || '%'
+                OR U.NICKNAME LIKE '%' || #{query} || '%'
+                )
+            </if>
+            <if test="roles != null and roles.size() > 0">
+                and (
+                U.ROLE in
+                <foreach collection="roles" item="role" open="(" separator="," close=")">
+                    #{role}
+                </foreach>
+                )
+            </if>
+        </where>
+        ORDER BY U.ID ASC
+        LIMIT #{limit}
+        OFFSET #{offset}
+    </select>
+
+    <select id="getTotalUserCount" resultType="java.lang.Integer">
+        select count(*) from users;
+    </select>
+
+    <select id="getAdminAttendanceAward"
+            resultType="com.buddy.user.dto.attendanceAward.AttendanceAwardCandidateRow">
+        SELECT
+        sa.user_id AS userId,
+        u.name AS name,
+        u.nickname AS nickname,
+        u.level AS level,
+        COUNT(sa.id) AS appliedCount,
+        COUNT(CASE WHEN a.status IN ('ATTENDED', 'LATE') THEN 1 END) AS attendedCount,
+        COUNT(CASE WHEN a.status = 'ABSENT' THEN 1 END) AS noShowCount,
+        ROUND(
+        COUNT(CASE WHEN a.status IN ('ATTENDED', 'LATE') THEN 1 END) * 100.0
+        / NULLIF(COUNT(sa.id), 0)
+        ) AS attendanceRate
+        FROM session_applications sa
+        INNER JOIN sessions s
+        ON s.id = sa.session_id
+        INNER JOIN users u
+        ON u.id = sa.user_id
+        LEFT JOIN attendances a
+        ON a.session_id = sa.session_id
+        AND a.user_id = sa.user_id
+        WHERE sa.status = 'CONFIRMED'
+        AND EXTRACT(YEAR FROM s.starts_at) = #{year}
+        AND EXTRACT(MONTH FROM s.starts_at) = #{month}
+        AND s.status = 'CLOSED'
+        GROUP BY sa.user_id, u.name, u.nickname, u.level
+        ORDER BY attendedCount DESC, attendanceRate DESC, noShowCount ASC, sa.user_id ASC;
+    </select>
+
+    <select id="getAttendanceSummary"
+            resultType="com.buddy.user.dto.attendanceAward.AttendanceAwardSummaryResponse">
+        SELECT
+        COUNT(DISTINCT s.id) AS totalSessionCount,
+        COUNT(DISTINCT sa.id) AS totalAppliedCount,
+        COUNT(DISTINCT CASE WHEN a.status IN ('ATTENDED', 'LATE') THEN sa.id END) AS totalAttendedCount,
+        COUNT(DISTINCT CASE WHEN a.status = 'ABSENT' THEN sa.id END) AS totalNoShowCount,
+        ROUND(
+        COUNT(DISTINCT CASE WHEN a.status IN ('ATTENDED', 'LATE') THEN sa.id END) * 100.0
+        / NULLIF(COUNT(DISTINCT sa.id), 0)
+        ) AS averageAttendanceRate
+        FROM sessions s
+        LEFT JOIN session_applications sa
+        ON sa.session_id = s.id
+        AND sa.status = 'CONFIRMED'
+        LEFT JOIN attendances a
+        ON a.session_id = sa.session_id
+        AND a.user_id = sa.user_id
+        WHERE EXTRACT(YEAR FROM s.starts_at) = #{year}
+        AND EXTRACT(MONTH FROM s.starts_at) = #{month}
+        AND s.status = 'CLOSED'
+        ;
+    </select>
+
+    <select id="getUserAttendanceRate" resultType="java.lang.Integer">
+        SELECT
+        COALESCE(
+        ROUND(
+        COUNT(CASE WHEN a.status IN ('ATTENDED', 'LATE') THEN 1 END) * 100.0
+        / NULLIF(COUNT(a.id), 0)
+        ),
+        0
+        ) AS attendanceRate
+        FROM attendances a
+        JOIN users u ON u.id = a.user_id
+        JOIN sessions s ON s.id = a.session_id
+        WHERE 1 = 1
+        and u.id = #{userId}
+        and s.starts_at &gt;= date_trunc('month', CURRENT_TIMESTAMP)
+        AND s.starts_at &lt; date_trunc('month', CURRENT_TIMESTAMP) + interval '1 month'
+        GROUP BY a.user_id, u.name, u.nickname, u.level
+    </select>
+    <select id="getAdminUserDetail" resultType="com.buddy.user.dto.userDetail.row.AdminUserDetailRow">
+        SELECT
+        u.id as userId
+        , u.name
+        , u.nickname
+        , u.email
+        , u.role
+        , u.status
+        , u.level
+        , u.mbti
+        , u.jobs
+        from users u
+        where 1 = 1
+        and u.id = #{userId}
+        ;
+    </select>
+
+    <select id="getAdminUserMonthlyAttendance"
+            resultType="com.buddy.user.dto.userDetail.row.AdminUserMonthlyAttendanceRow">
+        SELECT
+        COUNT(sa.id) AS appliedCount,
+        COUNT(CASE WHEN a.status IN ('ATTENDED', 'LATE') THEN 1 END) AS attendedCount,
+        COUNT(CASE WHEN a.status = 'ABSENT' THEN 1 END) AS noShowCount,
+        COALESCE(
+        ROUND(
+        COUNT(CASE WHEN a.status IN ('ATTENDED', 'LATE') THEN 1 END) * 100.0
+        / NULLIF(COUNT(sa.id), 0)
+        ),
+        0
+        ) AS attendanceRate
+        FROM session_applications sa
+        INNER JOIN sessions s
+        ON s.id = sa.session_id
+        LEFT JOIN attendances a
+        ON a.session_id = sa.session_id
+        AND a.user_id = sa.user_id
+        WHERE sa.user_id = #{userId}
+        AND sa.status = 'CONFIRMED'
+        AND EXTRACT(YEAR FROM s.starts_at) = #{year}
+        AND EXTRACT(MONTH FROM s.starts_at) = #{month}
+        ;
+    </select>
+
+    <select id="getAdminUserRecentAttendedSession"
+            resultType="com.buddy.user.dto.userDetail.row.AdminUserRecentAttendedSessionRow">
+        SELECT
+        a.session_id AS sessionId,
+        s.title,
+        s.starts_at AS startsAt,
+        s.location
+        FROM attendances a
+        INNER JOIN sessions s
+        ON s.id = a.session_id
+        WHERE a.user_id = #{userId}
+        AND a.status IN ('ATTENDED', 'LATE')
+        ORDER BY s.starts_at DESC
+        LIMIT 1
+        ;
+    </select>
+
+    <select id="getAdminUserMonthlyWords"
+            resultType="com.buddy.user.dto.userDetail.row.AdminUserMonthlyWordRow">
+        SELECT
+        w.id AS wordEntryId,
+        w.session_id AS sessionId,
+        w.phrase,
+        w.example,
+        w.created_at AS submittedAt
+        FROM word_entries w
+        INNER JOIN sessions s
+        ON s.id = w.session_id
+        INNER JOIN attendances a
+        ON a.session_id = w.session_id
+        AND a.user_id = w.user_id
+        WHERE w.user_id = #{userId}
+        AND EXTRACT(YEAR FROM s.starts_at) = #{year}
+        AND EXTRACT(MONTH FROM s.starts_at) = #{month}
+        AND a.status in ('ATTENDED', 'LATE')
+        ORDER BY w.created_at ASC
+        ;
+    </select>
+
+</mapper>

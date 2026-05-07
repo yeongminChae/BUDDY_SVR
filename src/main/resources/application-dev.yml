@@ -1,0 +1,12 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/buddy_db
+    username: postgres
+    password: postgres
+    driver-class-name: org.postgresql.Driver
+
+jwt:
+  secret-key: your-very-secret-key-your-very-secret-key-123456
+
+server:
+  port: 8080

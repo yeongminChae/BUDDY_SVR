@@ -1,0 +1,88 @@
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.buddy.topic.mapper.TopicMapper">
+
+    <insert id="upsertSessionTopic" useGeneratedKeys="false">
+        INSERT INTO session_topics (
+        session_id,
+        main_topic,
+        created_at,
+        updated_at
+        )
+        VALUES (
+        #{sessionId},
+        #{topic},
+        CURRENT_TIMESTAMP(0),
+        CURRENT_TIMESTAMP(0)
+        )
+        ON CONFLICT (session_id)
+        DO UPDATE SET
+        main_topic = EXCLUDED.main_topic,
+        updated_at = CURRENT_TIMESTAMP(0)
+    </insert>
+
+    <insert id="insertSessionTopicQuestions">
+        INSERT INTO session_topic_questions (
+        session_topic_id,
+        order_no,
+        content,
+        created_at,
+        updated_at
+        )
+        VALUES
+        <foreach collection="questions" item="question" separator=",">
+            (
+            #{sessionTopicId},
+            #{question.orderNo},
+            #{question.content},
+            CURRENT_TIMESTAMP(0),
+            CURRENT_TIMESTAMP(0)
+            )
+        </foreach>
+    </insert>
+
+    <delete id="deleteTopicQuestionsByTopicId"
+            parameterType="long">
+        DELETE FROM session_topic_questions
+        WHERE session_topic_id = #{sessionTopicId}
+    </delete>
+
+    <select id="findSessionTopicIdBySessionId"
+            parameterType="long"
+            resultType="java.lang.Long">
+        SELECT id
+        FROM session_topics
+        WHERE session_id = #{sessionId}
+    </select>
+
+    <select id="getAdminSessionTopicDetail"
+            resultType="com.buddy.topic.dto.get.row.TopicDetailRow">
+        SELECT
+        s.id AS sessionId,
+        s.title AS sessionTitle,
+        s.starts_at AS startsAt,
+        s.location AS location,
+        st.id AS sessionTopicId,
+        st.main_topic AS mainTopic
+        FROM sessions s
+        INNER JOIN session_topics st
+        ON st.session_id = s.id
+        WHERE s.id = #{sessionId}
+    </select>
+
+    <select id="getAdminSessionTopicQuestions"
+            resultType="com.buddy.topic.dto.get.row.TopicQuestionRow">
+        SELECT
+            q.id AS questionId,
+            q.order_no AS orderNo,
+            q.content AS content
+        FROM session_topic_questions q
+        INNER JOIN session_topics st
+            ON st.id = q.session_topic_id
+        WHERE st.session_id = #{sessionId}
+        ORDER BY q.order_no ASC
+    </select>
+
+</mapper>
+

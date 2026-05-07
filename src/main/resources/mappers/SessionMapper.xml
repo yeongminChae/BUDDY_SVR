@@ -1,0 +1,366 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.buddy.session.mapper.SessionMapper">
+
+    <select id="findUpcoming" resultType="com.buddy.session.model.Session">
+        SELECT
+        S.ID,
+        S.TITLE,
+        S.STARTS_AT AS startsAt,
+        S.LOCATION,
+        S.TOPIC,
+        S.TYPE,
+        (
+        SELECT COUNT(*)
+        FROM SESSION_APPLICATIONS A
+        WHERE A.SESSION_ID = S.ID
+        and a.status = 'CONFIRMED'
+        ) AS attendanceCount,
+        S.CAPACITY,
+        S.STATUS,
+        S.CREATED_AT AS createdAt,
+        S.UPDATED_AT AS updatedAt,
+        S.CREATED_BY AS createdBy,
+        S.HOST,
+        S.COST
+        FROM SESSIONS S
+        WHERE 1 = 1
+        and S.STATUS = 'OPEN'
+        ORDER BY S.STARTS_AT ASC
+        LIMIT 5
+    </select>
+
+    <select id="findPast" resultType="com.buddy.session.model.Session">
+        SELECT
+        S.ID,
+        S.TITLE,
+        S.STARTS_AT AS startsAt,
+        S.LOCATION,
+        S.TOPIC,
+        S.TYPE,
+        (
+        SELECT COUNT(*)
+        FROM SESSION_APPLICATIONS A
+        WHERE A.SESSION_ID = S.ID
+        and a.status = 'CONFIRMED'
+        ) AS attendanceCount,
+        S.CAPACITY,
+        S.STATUS,
+        S.CREATED_AT AS createdAt,
+        S.UPDATED_AT AS updatedAt,
+        S.CREATED_BY AS createdBy,
+        S.HOST,
+        S.COST
+        FROM SESSIONS S
+        WHERE 1 = 1
+        and S.STATUS = 'CLOSED'
+        ORDER BY S.STARTS_AT DESC
+        LIMIT 5
+    </select>
+
+    <select id="findSessionById" parameterType="long" resultType="com.buddy.session.model.Session">
+        SELECT
+        S.ID,
+        S.STARTS_AT AS startsAt,
+        S.LOCATION,
+        S.TOPIC,
+        S.TYPE,
+        (
+        SELECT COUNT(*)
+        FROM SESSION_APPLICATIONS A
+        WHERE 1 = 1
+        and A.SESSION_ID = S.ID
+        and A.status = 'CONFIRMED'
+        ) AS attendanceCount,
+        S.CAPACITY,
+        S.STATUS,
+        S.CREATED_AT AS createdAt,
+        S.UPDATED_AT AS updatedAt,
+        S.CREATED_BY AS createdBy,
+        S.HOST as hostId,
+        S.TITLE,
+        S.COST
+        FROM SESSIONS S
+        WHERE S.ID = #{sessionId}
+    </select>
+
+    <!-- SQLite upsert (unique: session_id, user_id) -->
+    <insert id="upsertApplication">
+        INSERT INTO session_applications (
+        session_id,
+        user_id,
+        status,
+        created_at,
+        updated_at
+        )
+        VALUES (
+        #{sessionId},
+        #{userId},
+        #{status},
+        CURRENT_TIMESTAMP,
+        CURRENT_TIMESTAMP
+        )
+        ON CONFLICT(session_id, user_id)
+        DO UPDATE SET
+        status = EXCLUDED.status,
+        updated_at = CURRENT_TIMESTAMP
+    </insert>
+
+    <insert id="insertSession" parameterType="com.buddy.session.model.Session"
+            useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO sessions (
+        starts_at,
+        location,
+        topic,
+        type,
+        capacity,
+        created_at,
+        updated_at,
+        title,
+        host
+        )
+        VALUES (
+        #{startsAt},
+        #{location},
+        #{topic},
+        #{type},
+        #{capacity},
+        #{createdAt},
+        #{updatedAt},
+        #{title},
+        #{hostId}
+        )
+    </insert>
+
+    <insert id="addSessionParticipants">
+        INSERT INTO SESSION_APPLICATIONS (
+        SESSION_ID,
+        USER_ID,
+        STATUS,
+        CREATED_AT,
+        UPDATED_AT
+        )
+        VALUES
+        <foreach collection="userIds" item="userId" separator=",">
+            (
+            #{sessionId},
+            #{userId},
+            #{status},
+            #{createdAt},
+            #{updatedAt}
+            )
+        </foreach>
+        ON CONFLICT (SESSION_ID, USER_ID)
+        DO UPDATE SET
+        STATUS = EXCLUDED.STATUS,
+        UPDATED_AT = CURRENT_TIMESTAMP
+    </insert>
+
+
+    <select id="findApplications" resultType="com.buddy.session.model.SessionApplication">
+        SELECT
+        id,
+        session_id AS sessionId,
+        user_id AS userId,
+        status,
+        applied_at AS appliedAt,
+        updated_at AS updatedAt
+        FROM session_applications
+        WHERE session_id = #{sessionId}
+        ORDER BY applied_at ASC
+    </select>
+
+    <select id="findSessionParticipants"
+            resultType="com.buddy.session.dto.admin.session_applicant.get.AdminParticipantItemResponse">
+
+        select
+        u.id as userId
+        , a.ID as applicationId
+        , u.NAME as name
+        , u.NICKNAME as nickname
+        , u.EMAIL as email
+        , a.STATUS as applicationStatus
+        , a.CREATED_AT as createdAt
+        from SESSION_APPLICATIONS a
+        inner join users u
+        on a.USER_ID = u.ID
+        where 1 = 1
+        and a.SESSION_ID = #{sessionId}
+        and a.STATUS = 'CONFIRMED'
+
+    </select>
+
+    <select id="getParticipantCandidates"
+            resultType="com.buddy.session.dto.admin.session_candidate.get.AdminParticipantAddCandidateItemResponse">
+        SELECT
+        U.ID AS userId,
+        U.NAME AS name,
+        U.NICKNAME AS nickname,
+        U.EMAIL AS email,
+        U.GENDER AS gender,
+        U.LEVEL AS level,
+        U.JOBS AS jobs,
+        U.MBTI AS mbti
+        FROM USERS U
+        WHERE U.ID NOT IN (
+        SELECT A.USER_ID
+        FROM SESSION_APPLICATIONS A
+        WHERE A.SESSION_ID = #{sessionId}
+        AND A.STATUS != 'CANCELED'
+        )
+        <if test="query != null and query != ''">
+            AND (
+            U.NAME LIKE '%' || #{query} || '%'
+            OR U.NICKNAME LIKE '%' || #{query} || '%'
+            )
+        </if>
+        ORDER BY U.ID ASC
+        LIMIT #{limit}
+        OFFSET #{offset}
+    </select>
+
+    <select id="countTableAssignmentsBySessionId" resultType="java.lang.Integer">
+        SELECT COUNT(*)
+        FROM TABLE_ASSIGNMENTS
+        WHERE SESSION_ID = #{sessionId}
+    </select>
+
+    <select id="findClosableSessionIds"
+            resultType="java.lang.Long">
+        SELECT id
+        FROM sessions
+        WHERE status = 'OPEN'
+        AND starts_at + INTERVAL '90 minutes' &lt;= #{now}::timestamp
+    </select>
+
+    <select id="getSessionHistoryDetail"
+            resultType="com.buddy.session.dto.admin.session_history.row.SessionHistoryDetailRow">
+        SELECT
+        s.id AS sessionId,
+        s.title AS title,
+        s.starts_at AS startsAt,
+        s.location AS location,
+        COUNT(DISTINCT sa.id) AS appliedCount,
+        COUNT(DISTINCT CASE WHEN a.status IN ('ATTENDED', 'LATE') THEN sa.id END) AS attendedCount,
+        COUNT(DISTINCT CASE WHEN a.status = 'ABSENT' THEN sa.id END) AS noShowCount,
+        ROUND(
+        COUNT(DISTINCT CASE WHEN a.status IN ('ATTENDED', 'LATE') THEN sa.id END) * 100.0
+        / NULLIF(COUNT(DISTINCT sa.id), 0)
+        ) AS attendanceRate,
+        s.topic AS topicTitle
+        FROM sessions s
+        LEFT JOIN session_applications sa
+        ON sa.session_id = s.id
+        AND sa.status = 'CONFIRMED'
+        LEFT JOIN attendances a
+        ON a.session_id = sa.session_id
+        AND a.user_id = sa.user_id
+        WHERE s.id = #{sessionId}
+        AND s.status = 'CLOSED'
+        GROUP BY
+        s.id,
+        s.title,
+        s.starts_at,
+        s.location,
+        s.topic;
+    </select>
+    <select id="getSessionHistoryParticipants"
+            resultType="com.buddy.session.dto.admin.session_history.row.SessionHistoryParticipantRow">
+        SELECT
+        a.user_id AS userId,
+        u.name AS name,
+        u.nickname AS nickname
+        FROM attendances a
+        INNER JOIN users u
+        ON u.id = a.user_id
+        WHERE a.session_id = #{sessionId}
+        AND a.status IN ('ATTENDED', 'LATE')
+        ORDER BY u.name ASC;
+    </select>
+
+    <select id="getSessionHistoryTableMembers"
+            resultType="com.buddy.session.dto.admin.session_history.row.SessionHistoryTableMemberRow">
+        SELECT
+        t.round_no as roundNo,
+        t.table_no AS tableNo,
+        t.user_id AS userId,
+        u.name AS name,
+        u.nickname AS nickname
+        FROM table_assignments t
+        INNER JOIN users u
+        ON u.id = t.user_id
+        WHERE t.session_id = #{sessionId}
+        ORDER BY t.table_no ASC, u.name ASC;
+    </select>
+    <select id="getSessionHistoryApplicants"
+            resultType="com.buddy.session.dto.admin.session_history.row.SessionHistoryParticipantRow">
+        SELECT
+        sa.user_id AS userId,
+        u.name AS name,
+        u.nickname AS nickname
+        FROM session_applications sa
+        INNER JOIN users u
+        ON u.id = sa.user_id
+        WHERE sa.session_id = #{sessionId}
+        AND sa.status = 'CONFIRMED'
+        ORDER BY u.name ASC
+    </select>
+
+    <select id="findApplicationById" resultType="com.buddy.session.model.SessionApplication">
+        SELECT
+        sa.id AS id,
+        sa.session_id AS sessionId,
+        sa.user_id AS userId,
+        sa.status AS status,
+        sa.created_at AS appliedAt,
+        sa.updated_at AS updatedAt
+        FROM SESSION_APPLICATIONS sa
+        WHERE sa.id = #{applicationId}
+    </select>
+
+    <select id="getAttendanceSessionInfo"
+            resultType="com.buddy.attendance.dto.session.row.AttendanceSessionDetailRow">
+        SELECT
+             s.id AS sessionId,
+             s.title AS title,
+             s.starts_at AS startsAt,
+             s.location AS location,
+             st.main_topic AS topicTitle
+         FROM sessions s
+         LEFT JOIN session_topics st
+             ON st.session_id = s.id
+         WHERE s.id = #{sessionId}
+    </select>
+
+    <update id="cancelSessionApplication">
+        UPDATE SESSION_APPLICATIONS
+        SET
+        STATUS = 'CANCELED',
+        UPDATED_AT = #{updatedAt}
+        WHERE 1 = 1
+        and ID = #{applicationId}
+        and session_id = #{sessionId}
+    </update>
+
+    <update id="closeExpiredSessions">
+        UPDATE SESSIONS
+        SET
+        STATUS = 'CLOSED',
+        UPDATED_AT = #{now}
+        WHERE STATUS = 'OPEN'
+        AND STARTS_AT &lt; #{now}
+    </update>
+
+    <update id="closeSessions">
+        UPDATE SESSIONS
+        SET
+        STATUS = 'CLOSED',
+        UPDATED_AT = CURRENT_TIMESTAMP
+        WHERE 1 = 1
+        and ID = #{sessionId}
+        AND STATUS = 'OPEN'
+    </update>
+
+</mapper>

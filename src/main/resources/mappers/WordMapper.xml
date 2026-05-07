@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.buddy.word.mapper.WordMapper">
+
+    <insert id="insert" parameterType="com.buddy.word.model.WordEntry">
+        INSERT INTO word_entries (session_id, user_id, phrase, example, memo, created_at)
+        VALUES (#{sessionId}, #{userId}, #{phrase}, #{example}, #{memo}, #{createdAt})
+    </insert>
+
+    <select id="findByUser" resultType="com.buddy.word.model.WordEntry">
+        SELECT
+        id,
+        session_id AS sessionId,
+        user_id AS userId,
+        phrase,
+        example,
+        memo,
+        created_at AS createdAt
+        FROM word_entries
+        WHERE user_id = #{userId}
+        ORDER BY created_at DESC
+    </select>
+
+</mapper>

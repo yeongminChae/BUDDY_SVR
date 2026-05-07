@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.buddy.attendance.mapper.AttendanceMapper">
+
+    <select id="upsert"
+            parameterType="com.buddy.attendance.dto.session.UpsertAttendanceCommand"
+            resultType="java.lang.Long">
+        INSERT INTO attendances (
+        session_id,
+        user_id,
+        status,
+        checked_in_at,
+        method,
+        created_at,
+        updated_at
+        )
+        VALUES (
+        #{sessionId},
+        #{userId},
+        #{status},
+        #{checkedInAt},
+        #{method},
+        CURRENT_TIMESTAMP,
+        CURRENT_TIMESTAMP
+        )
+        ON CONFLICT (session_id, user_id)
+        DO UPDATE SET
+        status = EXCLUDED.status,
+        checked_in_at = EXCLUDED.checked_in_at,
+        method = EXCLUDED.method,
+        updated_at = CURRENT_TIMESTAMP
+        RETURNING id
+    </select>
+
+    <select id="countSessionApplicationBySessionIdAndUserId" resultType="int">
+        SELECT COUNT(*)
+        FROM SESSION_APPLICATIONS A
+        WHERE A.SESSION_ID = #{sessionId}
+        AND A.USER_ID = #{userId}
+        AND A.STATUS != 'CANCELED'
+    </select>
+
+    <select id="createAttendanceWord"
+            parameterType="com.buddy.attendance.model.AttendanceWord"
+            resultType="java.lang.Long">
+        INSERT INTO word_entries (
+        session_id,
+        user_id,
+        phrase,
+        example,
+        created_at,
+        updated_at
+        )
+        VALUES (
+        #{sessionId},
+        #{userId},
+        #{phrase},
+        #{example},
+        #{createdAt},
+        #{updatedAt}
+        )
+        ON CONFLICT (session_id, user_id)
+        DO UPDATE SET
+        phrase = EXCLUDED.phrase,
+        example = EXCLUDED.example,
+        updated_at = EXCLUDED.updated_at
+        RETURNING id
+    </select>
+
+    <select id="findBySession" resultType="com.buddy.attendance.model.Attendance">
+        SELECT
+        id,
+        session_id AS sessionId,
+        user_id AS userId,
+        status,
+        checked_in_at AS checkedInAt,
+        method,
+        created_at AS createdAt
+        FROM attendances
+        WHERE session_id = #{sessionId}
+        ORDER BY checked_in_at ASC
+    </select>
+
+    <select id="getAttendanceSessions" resultType="com.buddy.attendance.model.AttendanceSessionRow">
+        SELECT
+        S.ID AS sessionId,
+        S.TITLE AS title,
+        S.STARTS_AT AS startsAt,
+        S.LOCATION AS location
+        FROM SESSIONS S
+        WHERE S.STATUS = 'OPEN'
+        ORDER BY S.STARTS_AT ASC
+    </select>
+
+    <select id="findUserByNameAndNickname" resultType="com.buddy.attendance.model.AttendanceUserRow">
+        SELECT
+        U.ID AS userId,
+        U.NAME AS name,
+        U.NICKNAME AS nickname
+        FROM USERS U
+        WHERE U.NAME = #{name}
+        AND U.NICKNAME = #{nickname}
+        LIMIT 1
+    </select>
+
+    <select id="findAbsentUserIdsBySessionId"
+            parameterType="long"
+            resultType="java.lang.Long">
+        SELECT sa.user_id
+        FROM session_applications sa
+        WHERE sa.session_id = #{sessionId}
+        AND sa.status = 'CONFIRMED'
+        AND sa.user_id NOT IN (
+        SELECT a.user_id
+        FROM attendances a
+        WHERE a.session_id = #{sessionId}
+        )
+    </select>
+
+</mapper>

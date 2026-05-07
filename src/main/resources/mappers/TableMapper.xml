@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.buddy.table.mapper.TableMapper">
+
+    <!-- MVP 더미: 확정자(=CONFIRMED) 기준으로 tableNo를 순번 부여 (실제 알고리즘은 서비스에서 고도화) -->
+    <!-- SQLite는 window function 지원(버전에 따라)되므로 ROW_NUMBER() 사용 가능.
+         만약 환경 SQLite가 낮아서 안되면, 이 부분은 자바에서 계산 후 insert로 바꾸면 됨. -->
+    <select id="assignTable">
+        SELECT
+        sa.session_id AS sessionId,
+        sa.user_id AS userId,
+        u.gender AS gender,
+        u.level AS level
+        FROM session_applications sa
+        JOIN users u ON u.id = sa.user_id
+        WHERE sa.session_id = #{sessionId}
+        AND sa.status = 'CONFIRMED'
+        ORDER BY u.level ASC, u.gender ASC, sa.user_id ASC;
+    </select>
+
+    <select id="findBySession" resultType="com.buddy.table.dto.TableAssignmentRow">
+        SELECT
+        A.SESSION_ID AS sessionId,
+        A.ROUND_NO AS roundNo,
+        A.TABLE_NO AS tableNo,
+        U.ID AS userId,
+        U.NAME AS name,
+        U.NICKNAME AS nickname,
+        U.EMAIL AS email,
+        U.LEVEL as level
+        FROM TABLE_ASSIGNMENTS A
+        INNER JOIN USERS U
+        ON A.USER_ID = U.ID
+        WHERE A.SESSION_ID = #{sessionId}
+        ORDER BY A.ROUND_NO ASC, A.TABLE_NO ASC, U.ID ASC
+    </select>
+
+    <select id="findOne" resultType="com.buddy.table.model.TableAssignment">
+        SELECT
+        id,
+        session_id AS sessionId,
+        user_id AS userId,
+        table_no AS tableNo,
+        created_at AS createdAt
+        FROM table_assignments
+        WHERE session_id = #{sessionId}
+        AND user_id = #{userId}
+        LIMIT 1
+    </select>
+
+    <!-- 1) 전체 인원 조사: CONFIRMED만 -->
+    <select id="countConfirmedParticipants" resultType="int">
+        SELECT COUNT(*)
+        FROM session_applications sa
+        WHERE sa.session_id = #{sessionId}
+        AND sa.status = 'CONFIRMED'
+    </select>
+
+
+    <!-- 2) 확정자 로드: 알고리즘 입력 -->
+    <select id="findConfirmedParticipants" resultType="com.buddy.table.model.RoundAssignmentRow">
+        SELECT
+        s.session_id AS sessionId,
+        s.user_id AS userId,
+        NULL AS s1GroupId,
+        u.gender AS gender,
+        u.level AS level
+        FROM session_applications s
+        INNER JOIN users u
+        ON u.id = s.user_id
+        WHERE 1 = 1
+        AND s.session_id = #{sessionId}
+        AND s.status = 'CONFIRMED'
+        ORDER BY u.level ASC, u.gender ASC, s.user_id DESC
+    </select>
+
+    <!-- round insert -->
+    <insert id="insertRoundAssignments">
+        INSERT INTO table_assignments
+        (session_id, user_id, table_no, created_at, round_no, s1_group_id)
+        VALUES
+        <foreach collection="rows" item="r" separator=",">
+            (#{r.sessionId},
+            #{r.userId},
+            #{r.tableNo},
+            CURRENT_TIMESTAMP,
+            #{r.roundNo},
+            #{r.s1GroupId})
+        </foreach>
+    </insert>
+
+    <!-- 4) 레벨 + 성별 인원수 -->
+    <select id="countByLevelAndGender" resultType="com.buddy.table.model.LevelGenderCountRow">
+        SELECT
+        u.level AS level,
+        u.gender AS gender,
+        COUNT(*) AS count
+        FROM session_applications sa
+        JOIN users u ON u.id = sa.user_id
+        WHERE sa.session_id = #{sessionId}
+        AND sa.status = 'CONFIRMED'
+        GROUP BY u.level, u.gender
+        ORDER BY u.level DESC, u.gender ASC
+    </select>
+
+    <select id="getHostUserId" resultType="java.lang.Long">
+        select s.HOST from SESSIONS s
+        where 1 = 1
+        and s.ID = #{sessionId}
+    </select>
+
+    <!--기존 배치 결과 삭제 -->
+    <delete id="deleteAssignmentsBySession">
+        DELETE FROM table_assignments
+        WHERE 1 = 1
+        AND session_id = #{sessionId}
+    </delete>
+
+    <update id="updateTableAssignments">
+        UPDATE TABLE_ASSIGNMENTS
+        SET TABLE_NO = CASE
+        <foreach collection="changes" item="item">
+            WHEN SESSION_ID = #{sessionId}
+            AND USER_ID = #{item.userId}
+            AND ROUND_NO = #{item.roundNo}
+            THEN #{item.tableNo}
+        </foreach>
+        ELSE TABLE_NO
+        END
+        WHERE SESSION_ID = #{sessionId}
+        AND (
+        <foreach collection="changes" item="item" separator=" OR ">
+            (USER_ID = #{item.userId} AND ROUND_NO = #{item.roundNo})
+        </foreach>
+        )
+    </update>
+
+</mapper>
