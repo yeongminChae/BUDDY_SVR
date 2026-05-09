@@ -15,7 +15,8 @@ public class WebCorsConfig {
                 registry.addMapping("/api/**")
                         .allowedOrigins(
                                 "http://localhost:5173",
-                                "https://buddy-front.vercel.app"
+                                "https://buddy-front.vercel.app",
+                                "https://*.vercel.app"
                         )
                         .allowedMethods("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
                         .allowedHeaders("*");
