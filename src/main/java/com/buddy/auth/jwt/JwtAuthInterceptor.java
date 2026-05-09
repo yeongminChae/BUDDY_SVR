@@ -19,9 +19,14 @@ public class JwtAuthInterceptor implements HandlerInterceptor {
             Object handler
     ) throws Exception {
 
+        if ("OPTIONS".equalsIgnoreCase(request.getMethod())) {
+            response.setStatus(HttpServletResponse.SC_OK);
+            return true;
+        }
+
         String requestUri = request.getRequestURI();
 
-        if (requestUri.startsWith("/api/auth")) {
+        if (requestUri.startsWith("/api/auth") || requestUri.startsWith("/api/public")) {
             return true;
         }
 
@@ -46,12 +51,12 @@ public class JwtAuthInterceptor implements HandlerInterceptor {
             return false;
         }
 
-        if (requestUri.startsWith("/api/user") && ("USER".equals(role) == false && "ADMIN".equals(role) == false)) {
+        if (requestUri.startsWith("/api/user")
+                && ("USER".equals(role) == false && "ADMIN".equals(role) == false)) {
             response.setStatus(HttpServletResponse.SC_FORBIDDEN);
             return false;
         }
 
         return true;
     }
-
 }
