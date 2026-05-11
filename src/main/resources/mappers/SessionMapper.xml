@@ -204,11 +204,12 @@
         U.JOBS AS jobs,
         U.MBTI AS mbti
         FROM USERS U
-        WHERE U.ID NOT IN (
-        SELECT A.USER_ID
-        FROM SESSION_APPLICATIONS A
-        WHERE A.SESSION_ID = #{sessionId}
-        AND A.STATUS != 'CANCELED'
+        WHERE U.STATUS = 'ACTIVE'
+        and U.ID NOT IN (
+            SELECT A.USER_ID
+            FROM SESSION_APPLICATIONS A
+            WHERE A.SESSION_ID = #{sessionId}
+                AND A.STATUS != 'CANCELED'
         )
         <if test="query != null and query != ''">
             AND (
